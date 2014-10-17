@@ -1,37 +1,41 @@
 function main
-    % polygon path tracer. two sided. 
+    % polygon path tracer. two sided.
+    
+    cam = new_camera();
+    c_r = cam_gen_ray( cam, [0,0]);
+    
     b = make_align_box( [1,20,4]' , [6,5,2]');
     
     d = [1,1,0.8]';
-    r = make_ray([0,0,0]', d);
+   % r = make_ray([0,0,0]', d);
     
-    box = make_box(4,5,6, [0,0,1]);
-    box = poly_translate(box, [5,5,5]');
+    box = make_box(2,3,3, [0,0,1]);
+    box = poly_translate(box, [10,10,3]');
     rot_mat = build_rot_mat(2,2,2);
     box = poly_rotate(box, rot_mat);
     
-    intersect_ray_align_box(b,r);
+    intersect_ray_align_box(b,c_r);
      
     fh = figure(1);
     clf(fh);
     set(gca, 'Projection', 'perspective');
     set(gca, 'CameraViewAngleMode', 'manual');
     axis manual
-    axis ([0, 1,0, 1,0, 1 ].*10);
+    axis ([0, 1,0, 1,0, 1 ].*15);
     hold on
     
     plot_poly(box);
     plot_poly_norms(box, 2);
-    plot_ray(r);
+    plot_ray(c_r);
     
     for i = 1:600
         cla(gca);    
         box = poly_rotate(box, rot_mat);
         plot_poly(box);
-        plot_poly_norms(box, 2);
-        plot_bounding_box(box);
-        plot_ray(r);
-        [intersect, isecData]=intersect_ray_poly(r, box);
+        %plot_poly_norms(box, 2);
+        %plot_bounding_box(box);
+        plot_ray(c_r);
+        [intersect, isecData]=intersect_ray_poly(c_r, box);
         if(intersect),
             plot_point( isecData.ip);
         end
@@ -40,23 +44,38 @@ function main
 
 end
 
-function c = new_camera()
-
+function camera = new_camera()
+    % camera space has camera at [0 0 0], and pointing down x axis
+    % make a ray and rotate and translate to world space
     camera.fov = 45;
-    camera.o = [0,0,0]; %origin
-    d = [1,0,0]; %origin
-    camera.d = d./l_v(d);
+    camera.o = [1,1,1]'; % camera location
+    rot = [45,5,-45]';
+    camera.rot = rot; % rotation from origin
     camera.yres = 320;
     camera.aspect = 16/9;
     camera.sample = 1; % current sample
     
-    camera.yres = floor( yres * camera.aspect );
-    camera.screen = zeros( camera.yres, camer.xres);
-    camera.buffer = zeros(camera.yres, camer.xres);
+    camera.xres = floor( camera.yres * camera.aspect );
+    camera.screen = zeros( camera.yres, camera.xres);
+    camera.buffer = zeros(camera.yres, camera.xres);
     camera.yon = 1; % distance to image plane
     
+    camera.rot_mat = build_rot_mat(rot(1),rot(2),rot(3));
     
+    % image maps to -1,1 in z
+    camera.sz = camera.yon*tand(camera.fov/2); % half screen height (z)
+    
+end
 
+function r = cam_gen_ray( cam, imagecoord)
+    % generate a ray through cam
+    %imagecoord [y,z]
+    screen_p = [1,  (imagecoord*cam.sz)  ]'
+    r = make_ray( [0,0,0]', screen_p);
+    
+    r.d = (r.d'*cam.rot_mat)'; % rotates around zero
+    r.o = r.o + cam.o;
+    %rotate to camera direction and move to cam origin    
 end
 
 function r = make_ray(o, d)
@@ -323,7 +342,7 @@ function b = poly_translate(b, t)
         b.faces(i).v2 = b.faces(i).v2 + t;
         b.faces(i).v3 = b.faces(i).v3 + t;    
     end
-    
+    b.o = b.o+ t;
     b.bb.bounds(:,1) = b.bb.bounds(:,1) + t;
     b.bb.bounds(:,2) = b.bb.bounds(:,2) + t;
         
