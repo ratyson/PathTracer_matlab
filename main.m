@@ -10,19 +10,25 @@ function main
     box = make_box(4,5,6, [0,0,1]);
     box = poly_translate(box, [1,1,1]');
     
-    rot_mat = biuld_rot_mat(1,1,1);
+    rot_mat = build_rot_mat(2,2,2);
     box = poly_rotate(box, rot_mat);
     
     fh = figure(1);
     clf(fh);
-    plot_ray(r);
     set(gca, 'Projection', 'perspective');
     set(gca, 'CameraViewAngleMode', 'manual');
     axis manual
     axis ([-20, 20,-20, 20,-20, 20 ]);
     hold on
+    
+    for i = 1:600
+        cla(gca);
+        plot_box(box);
+        box = poly_rotate(box, rot_mat);
+        drawnow
+    end
     %plot_align_box(b);
- 
+    plot_box(box);
     intersect_ray_align_box(b,r);
 
 end
@@ -34,6 +40,33 @@ function r = make_ray(o, d)
     r.d = d;
     r.inv_d = 1./d;
     r.sign = r.inv_d < 0;
+end
+
+function bb = make_bounding_box(p)
+  % take poly and make a bounding box
+  n = length(p.faces); % n faces
+  x_co = zeros( n,3);
+  y_co = zeros( n,3);
+  z_co = zeros( n,3);
+  
+  for i = 1:n
+      x_co(i,1) = p.faces(i).v1(1);
+      x_co(i,2) = p.faces(i).v2(1);
+      x_co(i,3) = p.faces(i).v3(1);
+      
+      y_co(i,1) = p.faces(i).v1(2);
+      y_co(i,2) = p.faces(i).v2(2);
+      y_co(i,3) = p.faces(i).v3(2);
+      
+      z_co(i,1) = p.faces(i).v1(3);
+      z_co(i,2) = p.faces(i).v2(3);
+      z_co(i,3) = p.faces(i).v3(3);
+      
+  end  
+  
+  minP = [ min(x_co(:)), min(y_co(:)),min(z_co(:))]';
+  maxP = [ max(x_co(:)), max(y_co(:)),max(z_co(:))]';
+  bb = make_align_box(maxP, minP);
 end
 
 function b = make_align_box(maxP, minP)
@@ -105,7 +138,7 @@ function plot_align_box(b)
     lZ( 1, [1,3,7,5]) = b.bounds(3,1);
     lZ( 2, [1,3,7,5]) = b.bounds(3,2);
     
-    plot3( lX,lY,lZ);
+    plot3( lX,lY,lZ, 'k--');
     
 end
 
@@ -148,12 +181,14 @@ function box = make_box(w,d,h,c)
     faces(12).v1 = verts(:,4); faces(12).v2 = verts(:,8); faces(12).v3 = verts(:,6);
     
     box.faces = faces;
+    box.bb = make_bounding_box(box); % bounding box
     box.o = [0,0,0]'; % origin
     
     % centre origin
     box = poly_translate(box, [-w/2, -d/2, -h/2]');
     box.o = [0,0,0]'; % reset origin
     box.c = c; % colour
+    
     
 end
 
@@ -168,7 +203,7 @@ function plot_box(b)
         plot3( lX,lY,lZ, 'Color', b.c);
     end
 
-
+    plot_align_box(b.bb);
 end
 
 function lX = build_tri_coords(face,a)
@@ -191,7 +226,8 @@ function b = poly_translate(b, t)
         b.faces(i).v3 = b.faces(i).v3 + t;    
     end
     
-    b.o = b.o + t;
+    b.bb.bounds(:,1) = b.bb.bounds(:,1) + t;
+    b.bb.bounds(:,2) = b.bb.bounds(:,2) + t;
         
 end
 
@@ -204,10 +240,12 @@ function b = poly_rotate(b, rot_mat)
         b.faces(i).v3 = ((b.faces(i).v3 - b.o)' * rot_mat)'+b.o;
         
     end
+    
+    b.bb = make_bounding_box(b); % bounding box
         
 end
 
-function rot_mat = biuld_rot_mat(xa,ya,za) % rot in degs
+function rot_mat = build_rot_mat(xa,ya,za) % rot in degs
 
     rot_matX = [1 0 0 
                 0 cosd(xa) -sind(xa) 
