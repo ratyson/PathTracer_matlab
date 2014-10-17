@@ -1,10 +1,8 @@
 function main
-    % box path tracer. two sided. 
+    % polygon path tracer. two sided. 
     b = make_align_box( [1,20,4]' , [6,5,2]');
     
     d = [1,1,0.8]';
-    l_d = sqrt( sum( d.^2));
-    d = d./l_d;
     r = make_ray([0,0,0]', d);
     
     box = make_box(4,5,6, [0,0,1]);
@@ -13,9 +11,7 @@ function main
     box = poly_rotate(box, rot_mat);
     
     intersect_ray_align_box(b,r);
-    
-    
-    
+     
     fh = figure(1);
     clf(fh);
     set(gca, 'Projection', 'perspective');
@@ -32,8 +28,8 @@ function main
         cla(gca);    
         box = poly_rotate(box, rot_mat);
         plot_poly(box);
-        %plot_poly_norms(box, 2);
-        %plot_bounding_box(box);
+        plot_poly_norms(box, 2);
+        plot_bounding_box(box);
         plot_ray(r);
         [intersect, isecData]=intersect_ray_poly(r, box);
         if(intersect),
@@ -44,11 +40,31 @@ function main
 
 end
 
+function c = new_camera()
+
+    camera.fov = 45;
+    camera.o = [0,0,0]; %origin
+    d = [1,0,0]; %origin
+    camera.d = d./l_v(d);
+    camera.yres = 320;
+    camera.aspect = 16/9;
+    camera.sample = 1; % current sample
+    
+    camera.yres = floor( yres * camera.aspect );
+    camera.screen = zeros( camera.yres, camer.xres);
+    camera.buffer = zeros(camera.yres, camer.xres);
+    camera.yon = 1; % distance to image plane
+    
+    
+
+end
+
 function r = make_ray(o, d)
     % origin, direction
     
     r.o = o;
-    r.d = d;
+    ld=l_v(d);
+    r.d = d/ld;
     r.inv_d = 1./d;
     r.sign = r.inv_d < 0;
 end
@@ -362,6 +378,4 @@ function l=l_v(v)
     % vector length
     l = sqrt( sum( v.^2));
 end
-
-
 
