@@ -8,33 +8,39 @@ function main
     r = make_ray([0,0,0]', d);
     
     box = make_box(4,5,6, [0,0,1]);
-    
+    box = poly_translate(box, [5,5,5]');
     rot_mat = build_rot_mat(2,2,2);
     box = poly_rotate(box, rot_mat);
     
     intersect_ray_align_box(b,r);
+    
+    
     
     fh = figure(1);
     clf(fh);
     set(gca, 'Projection', 'perspective');
     set(gca, 'CameraViewAngleMode', 'manual');
     axis manual
-    axis ([-20, 20,-20, 20,-20, 20 ]);
+    axis ([0, 1,0, 1,0, 1 ].*10);
     hold on
     
     plot_poly(box);
     plot_poly_norms(box, 2);
+    plot_ray(r);
     
     for i = 1:600
         cla(gca);    
         box = poly_rotate(box, rot_mat);
         plot_poly(box);
-        plot_poly_norms(box, 2);
-        plot_bounding_box(box);
+        %plot_poly_norms(box, 2);
+        %plot_bounding_box(box);
+        plot_ray(r);
+        [intersect, isecData]=intersect_ray_poly(r, box);
+        if(intersect),
+            plot_point( isecData.ip);
+        end
         drawnow
     end
-
-    
 
 end
 
@@ -96,8 +102,7 @@ function intersect = intersect_ray_align_box(b,r)
  
      if ( (tmin > tymax) || (tymin > tmax) ),
          intersect = 0;
-         fprintf('a\n');
-          return;
+         return;
      end
      if (tymin > tmin)
            tmin = tymin;
@@ -120,6 +125,56 @@ function intersect = intersect_ray_align_box(b,r)
      end
 
     intersect = 1;
+
+end
+
+function [intersect, isectData ]= intersect_ray_face(r,f)
+    % Möller-Trumbore algorithm
+    % isectData - pint of intersect
+    % intersect . intersects?
+    % t, distance from ray origin of intersect
+    % u,v are Barycentric Coordinates
+     intersect = 0;
+    
+     edge1 = f.v2 - f.v1;
+     edge2 = f.v3 - f.v1;
+     pvec = cross(r.d, edge2);
+     det = dot(edge1, pvec);
+     if (det == 0)
+         return;
+     end
+     invDet = 1 / det;
+     tvec = r.o - f.v1;
+     isectData.u = dot(tvec, pvec) * invDet;
+     if (isectData.u < 0 || isectData.u > 1)
+         return;
+     end
+     qvec = cross(tvec, edge1);
+     isectData.v = dot(r.d, qvec) * invDet;
+     if (isectData.v < 0 || isectData.u + isectData.v > 1)
+         return;
+     end
+     isectData.t = dot(edge2, qvec) * invDet;
+     
+     intersect = 1;
+end
+
+function [intersect, isecData] = intersect_ray_poly(r, p)
+    intersect = 0;
+    isecData.t= inf;
+    
+   for i = 1:length(p.faces) % for each face
+        [inter, data ] = intersect_ray_face(r,p.faces(i));
+        if(inter),
+            intersect = 1;
+            if( data.t < isecData.t),
+                isecData = data;
+            end
+        end
+   end
+   
+   % intersect coord
+   isecData.ip = r.o + r.d*isecData.t;
 
 end
 
@@ -146,6 +201,10 @@ function plot_bounding_box(p)
     
     plot3( lX,lY,lZ, 'k--');
     
+end
+
+function plot_point(p)
+    plot3( p(1), p(2), p(3), 'x');
 end
 
 function plot_ray(r)
