@@ -8,10 +8,11 @@ function main
     r = make_ray([0,0,0]', d);
     
     box = make_box(4,5,6, [0,0,1]);
-    box = poly_translate(box, [1,1,1]');
     
     rot_mat = build_rot_mat(2,2,2);
     box = poly_rotate(box, rot_mat);
+    
+    intersect_ray_align_box(b,r);
     
     fh = figure(1);
     clf(fh);
@@ -21,15 +22,19 @@ function main
     axis ([-20, 20,-20, 20,-20, 20 ]);
     hold on
     
+    plot_poly(box);
+    plot_poly_norms(box, 2);
+    
     for i = 1:600
-        cla(gca);
-        plot_box(box);
+        cla(gca);    
         box = poly_rotate(box, rot_mat);
+        plot_poly(box);
+        plot_poly_norms(box, 2);
+        plot_bounding_box(box);
         drawnow
     end
-    %plot_align_box(b);
-    plot_box(box);
-    intersect_ray_align_box(b,r);
+
+    
 
 end
 
@@ -118,7 +123,8 @@ function intersect = intersect_ray_align_box(b,r)
 
 end
 
-function plot_align_box(b)
+function plot_bounding_box(p)
+    b = p.bb;
     lX = zeros( 2, 12);
     lY = zeros( 2, 12);
     lZ = zeros( 2, 12);
@@ -161,26 +167,29 @@ function box = make_box(w,d,h,c)
     verts(:,5) = [w,d,0]; verts(:,6) = [w,d,h]; 
     verts(:,7) = [0,d,0]; verts(:,8) = [0,d,h];
        
-    % clockwise!
-    faces(1).v1 = verts(:,1); faces(1).v2 = verts(:,2); faces(1).v3 = verts(:,3);
-    faces(2).v1 = verts(:,2); faces(2).v2 = verts(:,4); faces(2).v3 = verts(:,3);
+    % anti-clockwise!
+    faces(1).v1 = verts(:,1); faces(1).v2 = verts(:,3); faces(1).v3 = verts(:,2);
+    faces(2).v1 = verts(:,2); faces(2).v2 = verts(:,3); faces(2).v3 = verts(:,4);
     
-    faces(3).v1 = verts(:,3); faces(3).v2 = verts(:,4); faces(3).v3 = verts(:,5);
-    faces(4).v1 = verts(:,4); faces(4).v2 = verts(:,6); faces(4).v3 = verts(:,5);
+    faces(3).v1 = verts(:,3); faces(3).v2 = verts(:,5); faces(3).v3 = verts(:,4);
+    faces(4).v1 = verts(:,4); faces(4).v2 = verts(:,5); faces(4).v3 = verts(:,6);
     
-    faces(5).v1 = verts(:,5); faces(5).v2 = verts(:,6); faces(5).v3 = verts(:,7);
-    faces(6).v1 = verts(:,6); faces(6).v2 = verts(:,8); faces(6).v3 = verts(:,7);
+    faces(5).v1 = verts(:,5); faces(5).v2 = verts(:,7); faces(5).v3 = verts(:,6);
+    faces(6).v1 = verts(:,6); faces(6).v2 = verts(:,7); faces(6).v3 = verts(:,8);
     
-    faces(7).v1 = verts(:,7); faces(7).v2 = verts(:,8); faces(7).v3 = verts(:,1);
-    faces(8).v1 = verts(:,8); faces(8).v2 = verts(:,2); faces(8).v3 = verts(:,1);
+    faces(7).v1 = verts(:,7); faces(7).v2 = verts(:,1); faces(7).v3 = verts(:,8);
+    faces(8).v1 = verts(:,8); faces(8).v2 = verts(:,1); faces(8).v3 = verts(:,2);
     
-    faces(9).v1 = verts(:,1); faces(9).v2 = verts(:,3); faces(9).v3 = verts(:,7);
-    faces(10).v1 = verts(:,3); faces(10).v2 = verts(:,5); faces(10).v3 = verts(:,7);
+    faces(9).v1 = verts(:,1); faces(9).v2 = verts(:,7); faces(9).v3 = verts(:,3);
+    faces(10).v1 = verts(:,3); faces(10).v2 = verts(:,7); faces(10).v3 = verts(:,5);
     
-    faces(11).v1 = verts(:,2); faces(11).v2 = verts(:,8); faces(11).v3 = verts(:,4);
-    faces(12).v1 = verts(:,4); faces(12).v2 = verts(:,8); faces(12).v3 = verts(:,6);
+    faces(11).v1 = verts(:,2); faces(11).v2 = verts(:,4); faces(11).v3 = verts(:,8);
+    faces(12).v1 = verts(:,4); faces(12).v2 = verts(:,6); faces(12).v3 = verts(:,8);
     
+    faces = update_normals(faces); % normals
     box.faces = faces;
+    
+    
     box.bb = make_bounding_box(box); % bounding box
     box.o = [0,0,0]'; % origin
     
@@ -192,9 +201,9 @@ function box = make_box(w,d,h,c)
     
 end
 
-function plot_box(b)
+function plot_poly(b)
 
-    for i = 1:12 % for each face
+    for i = 1:length(b.faces) % for each face
         
         lX = build_tri_coords(b.faces(i),1);   
         lY = build_tri_coords(b.faces(i),2); 
@@ -203,11 +212,25 @@ function plot_box(b)
         plot3( lX,lY,lZ, 'Color', b.c);
     end
 
-    plot_align_box(b.bb);
+end
+
+function plot_poly_norms(b, s)
+% s size
+    c = zeros(3,1); % centre
+    for i = 1:length(b.faces) % for each face
+        f = b.faces(i);
+        
+        c(1) = sum( [f.v1(1), f.v2(1), f.v3(1)] )/3;
+        c(2) = sum( [f.v1(2), f.v2(2), f.v3(2)] )/3;
+        c(3) = sum( [f.v1(3), f.v2(3), f.v3(3)] )/3;
+        n = c + f.n*s;  
+        plot3( [c(1) ; n(1)],[c(2); n(2)],[c(3);n(3)], 'k'); 
+
+    end
 end
 
 function lX = build_tri_coords(face,a)
-        % face i axis a
+        % face i, axis a
         lX = zeros( 2, 3);
         
         lX(1,1) = face.v1(a);
@@ -240,7 +263,7 @@ function b = poly_rotate(b, rot_mat)
         b.faces(i).v3 = ((b.faces(i).v3 - b.o)' * rot_mat)'+b.o;
         
     end
-    
+    b.faces = update_normals(b.faces); % normals
     b.bb = make_bounding_box(b); % bounding box
         
 end
@@ -259,4 +282,27 @@ function rot_mat = build_rot_mat(xa,ya,za) % rot in degs
     rot_mat = rot_matX*rot_matY*rot_matZ;
 
 end
+
+function faces = update_normals(faces)
+    
+    for i = 1:length(faces)
+        faces(i).n = compute_normal(faces(i));
+    end
+
+end
+
+function n = compute_normal(f)
+    % compute normal from face
+    U = f.v2 - f.v1;
+    V = f.v3 - f.v1;
+    n = cross(f.v2 - f.v1, f.v3-f.v1);
+    n = n./l_v(n); % normalise
+end
+
+function l=l_v(v)
+    % vector length
+    l = sqrt( sum( v.^2));
+end
+
+
 
