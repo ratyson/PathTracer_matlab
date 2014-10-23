@@ -2,62 +2,113 @@ function main
     % polygon path tracer. two sided.
     
     cam = new_camera();
-    c_r = cam_gen_ray( cam, [0,0]);
+    objects = buildObjects();
+    lights = buildLights();
     
-    b = make_align_box( [1,20,4]' , [6,5,2]');
+    plot_world(cam, objects, lights);
     
-    d = [1,1,0.8]';
-   % r = make_ray([0,0,0]', d);
+  
+    nSamples = 100;
     
-    box = make_box(2,3,3, [0,0,1]);
-    box = poly_translate(box, [10,10,3]');
-    rot_mat = build_rot_mat(2,2,2);
-    box = poly_rotate(box, rot_mat);
-    
-    intersect_ray_align_box(b,c_r);
-     
-    fh = figure(1);
-    clf(fh);
-    set(gca, 'Projection', 'perspective');
-    set(gca, 'CameraViewAngleMode', 'manual');
+    fH = figure(99);
+    clf(fH);
+    imH = image(cam.screen);
     axis manual
-    axis ([0, 1,0, 1,0, 1 ].*15);
-    hold on
+    axis equal
+    drawnow
     
-    plot_poly(box);
-    plot_poly_norms(box, 2);
-    plot_ray(c_r);
+    for s = 1:nSamples, 
+       cam = sample(s,cam, objects, lights);
+       set(imH, 'CData', cam.screen);
+       drawnow
+       s
+    end
     
-    for i = 1:600
-        cla(gca);    
-        box = poly_rotate(box, rot_mat);
-        plot_poly(box);
-        %plot_poly_norms(box, 2);
-        %plot_bounding_box(box);
-        plot_ray(c_r);
-        [intersect, isecData]=intersect_ray_poly(c_r, box);
-        if(intersect),
-            plot_point( isecData.ip);
-        end
-        drawnow
+    
+    
+    
+    
+  %  b = make_align_box( [1,20,4]' , [6,5,2]');   
+   % d = [1,1,0.8]';
+   % r = make_ray([0,0,0]', d); 
+  %  intersect_ray_align_box(b,c_r);
+
+
+end
+
+function cam = sample(n,cam, objects, lights)
+    jitter = cam.pixSize_o2 + (-2*cam.pixSize_o2).*rand(cam.screenSize,2);
+   
+    pCount = 1;
+    for Y = 1:cam.yres,  
+        for X = 1:cam.xres,
+            sx = cam.x_sample(X) + jitter( pCount, 1);
+            sy = cam.y_sample(Y) + jitter( pCount, 2);
+            
+            c_r = cam_gen_ray( cam, [sx,sy]);
+            
+            intersect = 0;
+            data.t = inf;
+            for b = 1:length(objects),  
+                [intersectP, isecData]=intersect_ray_poly(c_r, objects(b));
+                if(intersectP),
+                    intersect = 1;
+                    if( isecData.t < data.t ),
+                        data = isecData;
+                    end
+                end
+            end
+             
+            if(intersect),
+               
+               cam.buffer(Y,X,1) = cam.buffer(Y,X,1) + data.c(1)*255;
+               cam.buffer(Y,X,2) = cam.buffer(Y,X,2) + data.c(2)*255;
+               cam.buffer(Y,X,3) = cam.buffer(Y,X,3) + data.c(3)*255;
+               cam.screen(Y,X,:) = uint8(cam.buffer(Y,X,:) ./ n); 
+            end
+        
+            pCount = pCount+1;
+        end        
     end
 
+end
+
+function objects = buildObjects
+
+    objects(1) = make_box(2,3,3, [0,0,1]);
+    objects(1) = poly_translate(objects(1), [13,9,3]');
+    rot_mat = build_rot_mat(5,25,5);
+    objects(1) = poly_rotate(objects(1), rot_mat);
+    
+    
+    objects(2) = make_box(2,4,1, [1,0,0]);
+    objects(2) = poly_translate(objects(2), [10,10,3]');
+    rot_mat = build_rot_mat(2,2,2);
+    objects(2) = poly_rotate(objects(2), rot_mat);
+    
+    
+end
+
+function lights =  buildLights()
+    lights(1).intensity = 1;
+    lights(1).p = [0,5,5];
 end
 
 function camera = new_camera()
     % camera space has camera at [0 0 0], and pointing down x axis
     % make a ray and rotate and translate to world space
     camera.fov = 45;
-    camera.o = [1,1,1]'; % camera location
-    rot = [45,5,-45]';
+    camera.o = [3,3,3]'; % camera location
+    rot = [0,0,-45]';  %x - roll, y- pitch, z-yaw
     camera.rot = rot; % rotation from origin
-    camera.yres = 320;
-    camera.aspect = 16/9;
+    camera.yres = 100;
+    camera.aspect = 1;
     camera.sample = 1; % current sample
     
     camera.xres = floor( camera.yres * camera.aspect );
-    camera.screen = zeros( camera.yres, camera.xres);
-    camera.buffer = zeros(camera.yres, camera.xres);
+    camera.screenSize = camera.yres * camera.xres;
+    camera.screen = uint8(zeros( camera.yres, camera.xres, 3));
+    camera.buffer = zeros( camera.yres, camera.xres, 3);
     camera.yon = 1; % distance to image plane
     
     camera.rot_mat = build_rot_mat(rot(1),rot(2),rot(3));
@@ -65,27 +116,43 @@ function camera = new_camera()
     % image maps to -1,1 in z
     camera.sz = camera.yon*tand(camera.fov/2); % half screen height (z)
     
+    camera.pixSize = (2/camera.yres);
+    camera.pixSize_o2 = camera.pixSize/2;
+    camera.y_sample = -1:camera.pixSize:2;
+    camera.x_sample = (-1*camera.aspect):camera.pixSize:(camera.aspect+1);
+    % force correct size
+    camera.y_sample = camera.y_sample(1:camera.yres);
+    camera.x_sample = camera.x_sample(1:camera.xres);
+    
+    size(camera.x_sample)
+    size(camera.y_sample)
 end
 
 function r = cam_gen_ray( cam, imagecoord)
     % generate a ray through cam
     %imagecoord [y,z]
-    screen_p = [1,  (imagecoord*cam.sz)  ]'
-    r = make_ray( [0,0,0]', screen_p);
+    screen_p = [1,  (imagecoord*cam.sz)  ]';
     
-    r.d = (r.d'*cam.rot_mat)'; % rotates around zero
-    r.o = r.o + cam.o;
-    %rotate to camera direction and move to cam origin    
+    screen_p_len = l_v(screen_p);
+    screen_p = screen_p./screen_p_len; % unit vec
+    screen_p = (screen_p'*cam.rot_mat)'; % rotates around zero
+    
+    r = make_ray( cam.o, screen_p);
 end
 
 function r = make_ray(o, d)
     % origin, direction
     
     r.o = o;
-    ld=l_v(d);
-    r.d = d/ld;
+    r.l = 50; % ray length
+    
+    ld=l_v(d); 
+    r.ud = d/ld; % unit direction
+    
+    r.d = r.ud.*r.l; % full length vector
     r.inv_d = 1./d;
     r.sign = r.inv_d < 0;
+
 end
 
 function bb = make_bounding_box(p)
@@ -144,7 +211,7 @@ function intersect = intersect_ray_align_box(b,r)
      end
      
      if (tymax < tmax)
-           tmax = tymax;
+          tmax = tymax;
      end
      
      tzmin = ( b.bounds(3,r.sign(3)+1) - r.o(3))*r.inv_d(3);
@@ -154,7 +221,6 @@ function intersect = intersect_ray_align_box(b,r)
  %   tzmax = (bounds[1-r.sign[2]].z() - r.origin.z()) * r.inv_direction.z();
  
      if ( (tmin > tzmax) || (tzmin > tmax) )
-         fprintf('b\n');
         intersect = 0;
         return;
      end
@@ -195,9 +261,14 @@ function [intersect, isectData ]= intersect_ray_face(r,f)
 end
 
 function [intersect, isecData] = intersect_ray_poly(r, p)
-    intersect = 0;
     isecData.t= inf;
     
+    % check bounding box
+   intersect = intersect_ray_align_box(p.bb,r);
+   if(~intersect), return; end
+    
+   intersect = 0;
+   
    for i = 1:length(p.faces) % for each face
         [inter, data ] = intersect_ray_face(r,p.faces(i));
         if(inter),
@@ -209,8 +280,10 @@ function [intersect, isecData] = intersect_ray_poly(r, p)
    end
    
    % intersect coord
-   isecData.ip = r.o + r.d*isecData.t;
-
+   if(intersect)
+    isecData.ip = r.o + r.d*isecData.t;
+    isecData.c = p.c; % material. just colour atm
+   end
 end
 
 function plot_bounding_box(p)
@@ -243,7 +316,7 @@ function plot_point(p)
 end
 
 function plot_ray(r)
-    e = r.o + (r.d*50);  
+    e = r.o + (r.d);  
     plot3( [r.o(1); e(1)],[r.o(2); e(2)],[r.o(3);e(3)]); 
 end
 
@@ -321,6 +394,45 @@ function plot_poly_norms(b, s)
         plot3( [c(1) ; n(1)],[c(2); n(2)],[c(3);n(3)], 'k'); 
 
     end
+end
+
+function plot_world(cam, objects, lights)
+     
+    fh = figure(1);
+    clf(fh);
+    set(gca, 'Projection', 'perspective');
+    set(gca, 'CameraViewAngleMode', 'manual');
+    axis manual
+    axis ([0, 1,0, 1,0, 1 ].*15);
+    hold on
+      
+    for i = 0:0
+        cla(gca); 
+        % camera ray sweep
+        %v=floor(i/cam.xres);
+        %u = i-(v*cam.xres);
+        %v = ((v/cam.yres)*2)-1; % between -1 and 1
+        %u = ((u/cam.xres)*2)-1;
+        %fprintf('u: %.2f, v: %.2f\n', u,v );
+        c_r = cam_gen_ray( cam, [0,0]);
+        plot_ray(c_r);
+        
+        
+        for b = 1:length(objects),
+            % box = poly_rotate(box, rot_mat);
+            plot_poly(objects(b));
+            %plot_poly_norms(box, 2);
+            plot_bounding_box(objects(b));
+            
+            [intersect, isecData]=intersect_ray_poly(c_r, objects(b));
+            if(intersect),
+                plot_point( isecData.ip);
+            end
+        end
+
+        drawnow
+    end
+
 end
 
 function lX = build_tri_coords(face,a)
