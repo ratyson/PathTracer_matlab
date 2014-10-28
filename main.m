@@ -6,7 +6,7 @@ function main
     
     plot_world(cam, objects); 
  
-    nSamples = 25;
+    nSamples = 2500;
     
     fH = figure(99);
     clf(fH);
@@ -16,9 +16,10 @@ function main
     drawnow
    
     for s = 1:nSamples, 
-       cam = sample(s,cam, objects);
+       sample(s);
        set(imH, 'CData', cam.screen);
        drawnow
+       s
     end
     
 
@@ -27,10 +28,7 @@ function main
    % r = make_ray([0,0,0]', d); 
   %  intersect_ray_align_box(b,c_r);
 
-
-end
-
-function cam = sample(n,cam, objects)
+  function sample(n)
     jitter = cam.pixSize_o2 + (-2*cam.pixSize_o2).*rand(cam.screenSize,2);
    
     pCount = 1;
@@ -41,7 +39,7 @@ function cam = sample(n,cam, objects)
             
             c_r = cam_gen_ray( cam, [sx,sy]);
             
-            col = radiance(c_r, 1, objects);
+            col = radiance(c_r, 1);
                
             cam.buffer(Y,X,1) = cam.buffer(Y,X,1) + col(1);
             cam.buffer(Y,X,2) = cam.buffer(Y,X,2) + col(2);
@@ -52,35 +50,45 @@ function cam = sample(n,cam, objects)
             pCount = pCount+1;
         end        
     end
+    
+  end
 
-end
-
-function r = radiance(ray, depth, objects)
-    intersect = 0;
-    isec.t = inf;
-    for b = 1:length(objects),  
-        [intersectP, isecP]=intersect_ray_poly(ray, objects(b));
-        if(intersectP),
-            intersect = 1;
-            if( isecP.t < isec.t ),
-                isec = isecP;
+    function r = radiance(ray, depth)
+        intersect = 0;
+        isec.t = inf;
+        depth = depth+1;
+        for b = 1:length(objects),  
+            [intersectP, isecP]=intersect_ray_poly(ray, objects(b));
+            if(intersectP),
+                intersect = 1;
+                if( isecP.t < isec.t ),
+                    isec = isecP;
+                end
             end
         end
+
+        if(~intersect) 
+            r = [0,0,0];
+            return;
+        end
+
+        if( depth>=5)
+            r = isec.e;
+            return;
+        end
+        rn = (rand(3,1).*180)-90;
+        rotMat = build_rot_mat(rn(1),rn(2),rn(3));
+        d = isec.n'*rotMat;
+        rayRef = make_ray(isec.ip, d');
+        r = isec.e + isec.c.*(radiance(rayRef, depth)*(1/isec.t));
+    
     end
 
-    if(~intersect) 
-        r = [0,0,0];
-        return;
-    end
-    
-    if( depth>=3)
-        r = isec.e;
-        return;
-    end
-    
-    r = isec.c;
-    
 end
+
+
+
+
 
 function objects = buildObjects
 
@@ -96,12 +104,12 @@ function objects = buildObjects
     objects(2) = poly_rotate(objects(2), rot_mat);
     
     
-    objects(3) = make_box(5,5,1, [0,0,0], [12,12,12]); % light
-    objects(3) = poly_translate(objects(3), [6,6,12]');
+    objects(3) = make_box(5,5,5, [0,0,0], [8,8,8]); % light
+    objects(3) = poly_translate(objects(3), [3,3,12]');
     
-    objects(4) = make_box(14,14,14, [0.25,0.75,0.25], [0,0,0]);
-    objects(4) = poly_translate(objects(4), [7.5,7.5,7.5]');
-    objects(4).faces = flipNormals(objects(4).faces);
+   % objects(4) = make_box(14,14,14, [0.25,0.75,0.25], [0,0,0]);
+   % objects(4) = poly_translate(objects(4), [7.5,7.5,7.5]');
+   % objects(4).faces = flipNormals(objects(4).faces);
     
 end
 
@@ -117,7 +125,7 @@ function camera = new_camera()
     camera.o = [3,3,3]'; % camera location
     rot = [0,0,-45]';  %x - roll, y- pitch, z-yaw
     camera.rot = rot; % rotation from origin
-    camera.yres = 100;
+    camera.yres = 50;
     camera.aspect = 1;
     camera.sample = 1; % current sample
     
@@ -276,6 +284,7 @@ function [intersect, isectData ]= intersect_ray_face(r,f)
      
      if(isectData.t < 0.001), return; end
     
+     isectData.n = f.n;
      intersect = 1;
 end
 
@@ -446,8 +455,6 @@ function plot_world(cam, objects)
             
             [intersect, isecData]=intersect_ray_poly(c_r, objects(b));
             if(intersect),
-                to=isecData.t;
-                to
                 plot_point( isecData.ip);
             end
         end
@@ -518,7 +525,6 @@ function faces = update_normals(faces)
     end
 
 end
-
 
 function n = compute_normal(f)
     % compute normal from face
