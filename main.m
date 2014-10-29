@@ -3,6 +3,7 @@ function main
     
     cam = new_camera();
     objects = buildObjects();
+    lights =  buildLights();
     
     plot_world(cam, objects); 
  
@@ -10,7 +11,7 @@ function main
     
     fH = figure(99);
     clf(fH);
-    imH = image(cam.screen);
+    imH = image( cam.screen );
     axis manual
     axis equal
     drawnow
@@ -32,8 +33,10 @@ function main
     jitter = cam.pixSize_o2 + (-2*cam.pixSize_o2).*rand(cam.screenSize,2);
    
     pCount = 1;
-    for Y = 1:cam.yres,  
+    for Y = 1:cam.yres, 
+        Y_screen = cam.yres - (Y-1);
         for X = 1:cam.xres,
+            X_screen = cam.xres - (X-1);
             sx = cam.x_sample(X) + jitter( pCount, 1);
             sy = cam.y_sample(Y) + jitter( pCount, 2);
             
@@ -44,7 +47,7 @@ function main
             cam.buffer(Y,X,1) = cam.buffer(Y,X,1) + col(1);
             cam.buffer(Y,X,2) = cam.buffer(Y,X,2) + col(2);
             cam.buffer(Y,X,3) = cam.buffer(Y,X,3) + col(3);
-            cam.screen(Y,X,:) = uint8(clamp(cam.buffer(Y,X,:)./n)*255); 
+            cam.screen(Y_screen,X_screen,:) = uint8(clamp(cam.buffer(Y,X,:)./n)*255); 
             
         
             pCount = pCount+1;
@@ -57,6 +60,8 @@ function main
         intersect = 0;
         isec.t = inf;
         depth = depth+1;
+        r = [0,0,0]';
+        
         for b = 1:length(objects),  
             [intersectP, isecP]=intersect_ray_poly(ray, objects(b));
             if(intersectP),
@@ -67,50 +72,55 @@ function main
             end
         end
 
-        if(~intersect) 
-            r = [0,0,0];
+        if(~intersect || depth>=4) % no intersect or end of depth
             return;
         end
 
-        if( depth>=5)
-            r = isec.e;
-            return;
+        % check shadow rays and add radiance
+        for l = 1:length(lights)
+           d = lights(l).p - isec.ip; 
+           ray_shadow = make_ray( isec.ip, d, l_v(d)); 
+           
+           for b = 1:length(objects),  
+                [intersectP, ~]=intersect_ray_poly(ray_shadow, objects(b));
+                if(~intersectP),
+                    r = r + isec.c.*(lights(l).e/sqrt(isec.t));
+                end
+            end 
         end
-        rn = (rand(3,1).*180)-90;
-        rotMat = build_rot_mat(rn(1),rn(2),rn(3));
-        d = isec.n'*rotMat;
-        rayRef = make_ray(isec.ip, d');
-        r = isec.e + isec.c.*(radiance(rayRef, depth)*(1/isec.t));
+        
+        % reflection ray
+        ref_d = ray.d - 2*(ray.d'*isec.n)*isec.n;
+        rayRef = make_ray(isec.ip, ref_d, 100);
+        
+        r = r + isec.c.*(radiance(rayRef, depth));
     
     end
 
 end
 
-
-
-
-
 function objects = buildObjects
 
-    objects(1) = make_box(2,3,3, [0.25,0.25,0.75], [0,0,0]);
+    objects(1) = make_box(2,3,3, [0.25,0.25,0.75]', [0,0,0]');
     objects(1) = poly_translate(objects(1), [13,9,3]');
     rot_mat = build_rot_mat(5,25,5);
     objects(1) = poly_rotate(objects(1), rot_mat);
     
     
-    objects(2) = make_box(2,4,1, [0.75,0.25,0.25], [0,0,0]);
+    objects(2) = make_box(2,4,1, [0.75,0.25,0.25]', [0,0,0]');
     objects(2) = poly_translate(objects(2), [10,10,3]');
     rot_mat = build_rot_mat(2,2,2);
     objects(2) = poly_rotate(objects(2), rot_mat);
     
+    objects(3) = make_box(14,14,14, [0.25,0.75,0.25]', [0,0,0]');
+    objects(3) = poly_translate(objects(3), [7.5,7.5,7.5]');
+    objects(3).faces = flipNormals(objects(3).faces);
     
-    objects(3) = make_box(5,5,5, [0,0,0], [8,8,8]); % light
-    objects(3) = poly_translate(objects(3), [3,3,12]');
-    
-   % objects(4) = make_box(14,14,14, [0.25,0.75,0.25], [0,0,0]);
-   % objects(4) = poly_translate(objects(4), [7.5,7.5,7.5]');
-   % objects(4).faces = flipNormals(objects(4).faces);
-    
+end
+
+function lights =  buildLights()
+    lights(1).e = [1,1,1]'; % light emision
+    lights(1).p = [0,5,5]';
 end
 
 function a = clamp(a)
@@ -161,14 +171,14 @@ function r = cam_gen_ray( cam, imagecoord)
     screen_p = screen_p./screen_p_len; % unit vec
     screen_p = (screen_p'*cam.rot_mat)'; % rotates around zero
     
-    r = make_ray( cam.o, screen_p);
+    r = make_ray( cam.o, screen_p,100);
 end
 
-function r = make_ray(o, d)
+function r = make_ray(o, d, l)
     % origin, direction
     
     r.o = o;
-    r.l = 50; % ray length
+    r.l = l; % ray length
     
     ld=l_v(d); 
     r.ud = d/ld; % unit direction
@@ -282,7 +292,7 @@ function [intersect, isectData ]= intersect_ray_face(r,f)
      end
      isectData.t = dot(edge2, qvec) * invDet;
      
-     if(isectData.t < 0.001), return; end
+     if((isectData.t < 0.001) ||  (isectData.t>r.l)), return; end
     
      isectData.n = f.n;
      intersect = 1;
@@ -443,7 +453,7 @@ function plot_world(cam, objects)
         %v = ((v/cam.yres)*2)-1; % between -1 and 1
         %u = ((u/cam.xres)*2)-1;
         %fprintf('u: %.2f, v: %.2f\n', u,v );
-        c_r = cam_gen_ray( cam, [0,0]);
+        c_r = cam_gen_ray( cam, [-0.2,0.2]);
         plot_ray(c_r);
         
         
@@ -451,11 +461,18 @@ function plot_world(cam, objects)
             % box = poly_rotate(box, rot_mat);
             plot_poly(objects(b));
             plot_poly_norms(objects(b), 2);
+            objects(b)
             plot_bounding_box(objects(b));
             
             [intersect, isecData]=intersect_ray_poly(c_r, objects(b));
             if(intersect),
                 plot_point( isecData.ip);
+                
+                %reflection ray
+                ref_d = c_r.d - 2*(c_r.d'*isecData.n)*isecData.n;
+                
+                ref_ray = make_ray( isecData.ip, ref_d, 100);
+                plot_ray(ref_ray);
             end
         end
 
