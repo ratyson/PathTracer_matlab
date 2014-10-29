@@ -3,10 +3,12 @@ function main
     
     cam = new_camera();
     objects = buildObjects();
+    lights = buildLights();
     
-    plot_world(cam, objects); 
- 
-    nSamples = 2500;
+    plot_world(cam, objects, lights);
+    
+  
+    nSamples = 100;
     
     fH = figure(99);
     clf(fH);
@@ -14,21 +16,27 @@ function main
     axis manual
     axis equal
     drawnow
-   
+    
     for s = 1:nSamples, 
-       sample(s);
+       cam = sample(s,cam, objects, lights);
        set(imH, 'CData', cam.screen);
        drawnow
        s
     end
     
-
+    
+    
+    
+    
   %  b = make_align_box( [1,20,4]' , [6,5,2]');   
    % d = [1,1,0.8]';
    % r = make_ray([0,0,0]', d); 
   %  intersect_ray_align_box(b,c_r);
 
-  function sample(n)
+
+end
+
+function cam = sample(n,cam, objects, lights)
     jitter = cam.pixSize_o2 + (-2*cam.pixSize_o2).*rand(cam.screenSize,2);
    
     pCount = 1;
@@ -39,83 +47,51 @@ function main
             
             c_r = cam_gen_ray( cam, [sx,sy]);
             
-            col = radiance(c_r, 1);
+            intersect = 0;
+            data.t = inf;
+            for b = 1:length(objects),  
+                [intersectP, isecData]=intersect_ray_poly(c_r, objects(b));
+                if(intersectP),
+                    intersect = 1;
+                    if( isecData.t < data.t ),
+                        data = isecData;
+                    end
+                end
+            end
+             
+            if(intersect),
                
-            cam.buffer(Y,X,1) = cam.buffer(Y,X,1) + col(1);
-            cam.buffer(Y,X,2) = cam.buffer(Y,X,2) + col(2);
-            cam.buffer(Y,X,3) = cam.buffer(Y,X,3) + col(3);
-            cam.screen(Y,X,:) = uint8(clamp(cam.buffer(Y,X,:)./n)*255); 
-            
+               cam.buffer(Y,X,1) = cam.buffer(Y,X,1) + data.c(1)*255;
+               cam.buffer(Y,X,2) = cam.buffer(Y,X,2) + data.c(2)*255;
+               cam.buffer(Y,X,3) = cam.buffer(Y,X,3) + data.c(3)*255;
+               cam.screen(Y,X,:) = uint8(cam.buffer(Y,X,:) ./ n); 
+            end
         
             pCount = pCount+1;
         end        
     end
-    
-  end
-
-    function r = radiance(ray, depth)
-        intersect = 0;
-        isec.t = inf;
-        depth = depth+1;
-        for b = 1:length(objects),  
-            [intersectP, isecP]=intersect_ray_poly(ray, objects(b));
-            if(intersectP),
-                intersect = 1;
-                if( isecP.t < isec.t ),
-                    isec = isecP;
-                end
-            end
-        end
-
-        if(~intersect) 
-            r = [0,0,0];
-            return;
-        end
-
-        if( depth>=5)
-            r = isec.e;
-            return;
-        end
-        rn = (rand(3,1).*180)-90;
-        rotMat = build_rot_mat(rn(1),rn(2),rn(3));
-        d = isec.n'*rotMat;
-        rayRef = make_ray(isec.ip, d');
-        r = isec.e + isec.c.*(radiance(rayRef, depth)*(1/isec.t));
-    
-    end
 
 end
 
-
-
-
-
 function objects = buildObjects
 
-    objects(1) = make_box(2,3,3, [0.25,0.25,0.75], [0,0,0]);
+    objects(1) = make_box(2,3,3, [0,0,1]);
     objects(1) = poly_translate(objects(1), [13,9,3]');
     rot_mat = build_rot_mat(5,25,5);
     objects(1) = poly_rotate(objects(1), rot_mat);
     
     
-    objects(2) = make_box(2,4,1, [0.75,0.25,0.25], [0,0,0]);
+    objects(2) = make_box(2,4,1, [1,0,0]);
     objects(2) = poly_translate(objects(2), [10,10,3]');
     rot_mat = build_rot_mat(2,2,2);
     objects(2) = poly_rotate(objects(2), rot_mat);
     
     
-    objects(3) = make_box(5,5,5, [0,0,0], [8,8,8]); % light
-    objects(3) = poly_translate(objects(3), [3,3,12]');
-    
-   % objects(4) = make_box(14,14,14, [0.25,0.75,0.25], [0,0,0]);
-   % objects(4) = poly_translate(objects(4), [7.5,7.5,7.5]');
-   % objects(4).faces = flipNormals(objects(4).faces);
-    
 end
 
-function a = clamp(a)
-    a(a>1) =1;
-    a(a<0) =0;
+function lights =  buildLights()
+    lights(1).intensity = 1;
+    lights(1).p = [0,5,5];
 end
 
 function camera = new_camera()
@@ -125,7 +101,7 @@ function camera = new_camera()
     camera.o = [3,3,3]'; % camera location
     rot = [0,0,-45]';  %x - roll, y- pitch, z-yaw
     camera.rot = rot; % rotation from origin
-    camera.yres = 50;
+    camera.yres = 100;
     camera.aspect = 1;
     camera.sample = 1; % current sample
     
@@ -263,10 +239,9 @@ function [intersect, isectData ]= intersect_ray_face(r,f)
     
      edge1 = f.v2 - f.v1;
      edge2 = f.v3 - f.v1;
-     pvec = cross(r.ud, edge2);
+     pvec = cross(r.d, edge2);
      det = dot(edge1, pvec);
      if (det == 0)
-         isectData=0;
          return;
      end
      invDet = 1 / det;
@@ -276,15 +251,12 @@ function [intersect, isectData ]= intersect_ray_face(r,f)
          return;
      end
      qvec = cross(tvec, edge1);
-     isectData.v = dot(r.ud, qvec) * invDet;
+     isectData.v = dot(r.d, qvec) * invDet;
      if (isectData.v < 0 || isectData.u + isectData.v > 1)
          return;
      end
      isectData.t = dot(edge2, qvec) * invDet;
      
-     if(isectData.t < 0.001), return; end
-    
-     isectData.n = f.n;
      intersect = 1;
 end
 
@@ -309,9 +281,8 @@ function [intersect, isecData] = intersect_ray_poly(r, p)
    
    % intersect coord
    if(intersect)
-    isecData.ip = r.o + r.ud*isecData.t;
-    isecData.c = p.c; % material. colour
-    isecData.e = p.e; % material emision
+    isecData.ip = r.o + r.d*isecData.t;
+    isecData.c = p.c; % material. just colour atm
    end
 end
 
@@ -349,7 +320,7 @@ function plot_ray(r)
     plot3( [r.o(1); e(1)],[r.o(2); e(2)],[r.o(3);e(3)]); 
 end
 
-function box = make_box(w,d,h,c,e)
+function box = make_box(w,d,h,c)
 
     % make a box from triangles
     faces(12).v1 = zeros( 3,1); % verts of triangle. x,y,z
@@ -393,7 +364,7 @@ function box = make_box(w,d,h,c,e)
     box = poly_translate(box, [-w/2, -d/2, -h/2]');
     box.o = [0,0,0]'; % reset origin
     box.c = c; % colour
-    box.e = e; % emmission
+    
     
 end
 
@@ -405,7 +376,7 @@ function plot_poly(b)
         lY = build_tri_coords(b.faces(i),2); 
         lZ = build_tri_coords(b.faces(i),3); 
         
-        plot3( lX,lY,lZ, 'Color', clamp(b.c));
+        plot3( lX,lY,lZ, 'Color', b.c);
     end
 
 end
@@ -425,7 +396,7 @@ function plot_poly_norms(b, s)
     end
 end
 
-function plot_world(cam, objects)
+function plot_world(cam, objects, lights)
      
     fh = figure(1);
     clf(fh);
@@ -450,7 +421,7 @@ function plot_world(cam, objects)
         for b = 1:length(objects),
             % box = poly_rotate(box, rot_mat);
             plot_poly(objects(b));
-            plot_poly_norms(objects(b), 2);
+            %plot_poly_norms(box, 2);
             plot_bounding_box(objects(b));
             
             [intersect, isecData]=intersect_ray_poly(c_r, objects(b));
@@ -532,14 +503,6 @@ function n = compute_normal(f)
     V = f.v3 - f.v1;
     n = cross(f.v2 - f.v1, f.v3-f.v1);
     n = n./l_v(n); % normalise
-end
-
-function faces = flipNormals(faces)
-
-  % rotation will flip them back
-   for i = 1:length(faces)
-        faces(i).n = faces(i).n.*-1;
-   end
 end
 
 function l=l_v(v)
