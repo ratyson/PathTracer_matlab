@@ -1,13 +1,13 @@
 function main
     % polygon path tracer. two sided.
     
-    cam = new_camera();
+    cam = new_camera(40);
     objects = buildObjects();
     lights =  buildLights();
     
     plot_world(cam, objects); 
- 
-    nSamples = 2500;
+
+    nSamples = 3;
     
     fH = figure(99);
     clf(fH);
@@ -42,7 +42,7 @@ function main
             
             c_r = cam_gen_ray( cam, [sx,sy]);
             
-            col = radiance(c_r, 1);
+            col = radiance(c_r, 0);
                
             cam.buffer(Y,X,1) = cam.buffer(Y,X,1) + col(1);
             cam.buffer(Y,X,2) = cam.buffer(Y,X,2) + col(2);
@@ -76,6 +76,9 @@ function main
             return;
         end
 
+        %move ip out a bit to avoid self intersect
+        isec.ip = isec.ip + 0.0001*isec.n;
+        
         % check shadow rays and add radiance
         for l = 1:length(lights)
            d = lights(l).p - isec.ip; 
@@ -84,16 +87,26 @@ function main
            for b = 1:length(objects),  
                 [intersectP, ~]=intersect_ray_poly(ray_shadow, objects(b));
                 if(~intersectP),
-                    r = r + isec.c.*(lights(l).e/sqrt(isec.t));
+                    flux = sum(conj(ray_shadow.ud).*isec.n) ; % dot prod
+                    r = r + isec.c.*( (lights(l).e/sqrt(isec.t))*flux);
                 end
             end 
         end
         
         % reflection ray
-        ref_d = ray.d - 2*(ray.d'*isec.n)*isec.n;
-        rayRef = make_ray(isec.ip, ref_d, 100);
+        %ref_d = ray.d - 2*(ray.d'*isec.n)*isec.n;
+        %rayRef = make_ray(isec.ip, ref_d, 100);
+              
+        % random direction    
+        rd = randn(3,1);
+        if(sum(conj(rd).*isec.n) < 0), rd = -rd; end% dot product, flip if behind norm
+        rayRef = make_ray(isec.ip, rd, 100);
+    
+        % random around the reflection
         
-        r = r + isec.c.*(radiance(rayRef, depth));
+        
+        flux = sum(conj(rayRef.ud).*isec.n) ; % dot prod
+        r = r + isec.c.*(radiance(rayRef, depth)*flux);
     
     end
 
@@ -108,19 +121,22 @@ function objects = buildObjects
     
     
     objects(2) = make_box(2,4,1, [0.75,0.25,0.25]', [0,0,0]');
-    objects(2) = poly_translate(objects(2), [10,10,3]');
+    objects(2) = poly_translate(objects(2), [10,10,1.5]');
     rot_mat = build_rot_mat(2,2,2);
     objects(2) = poly_rotate(objects(2), rot_mat);
     
-    objects(3) = make_box(14,14,14, [0.25,0.75,0.25]', [0,0,0]');
-    objects(3) = poly_translate(objects(3), [7.5,7.5,7.5]');
-    objects(3).faces = flipNormals(objects(3).faces);
+ %   objects(3) = make_box(14,14,0.3, [0.25,0.75,0.25]', [0,0,0]');
+ %   objects(3) = poly_translate(objects(3), [10.5,10.5,0.15]');
+ %   objects(3).faces = flipNormals(objects(3).faces);
+ 
+    objects(3) = make_plane(25,14, [1,1,1]', [0,0,0]');
+    objects(3) = poly_translate(objects(3), [15.5,10.5,0.15]');
     
 end
 
 function lights =  buildLights()
     lights(1).e = [1,1,1]'; % light emision
-    lights(1).p = [0,5,5]';
+    lights(1).p = [0,5,10]';
 end
 
 function a = clamp(a)
@@ -128,14 +144,14 @@ function a = clamp(a)
     a(a<0) =0;
 end
 
-function camera = new_camera()
+function camera = new_camera(res)
     % camera space has camera at [0 0 0], and pointing down x axis
     % make a ray and rotate and translate to world space
     camera.fov = 45;
-    camera.o = [3,3,3]'; % camera location
-    rot = [0,0,-45]';  %x - roll, y- pitch, z-yaw
+    camera.o = [3,2,3]'; % camera location
+    rot = [0,-6,-40]';  %x - roll, y- pitch, z-yaw
     camera.rot = rot; % rotation from origin
-    camera.yres = 50;
+    camera.yres = res;
     camera.aspect = 1;
     camera.sample = 1; % current sample
     
@@ -407,6 +423,32 @@ function box = make_box(w,d,h,c,e)
     
 end
 
+function plane = make_plane(w,h,c,e)
+    % make a plane from triangles
+    faces(2).v1 = zeros( 3,1); % verts of triangle. x,y,z
+    faces(2).v2 = zeros( 3,1); % verts of triangle. x,y,z
+    faces(2).v3 = zeros( 3,1); % verts of triangle. x,y,z
+    faces(2).n = zeros( 3,1); % normal
+    
+    
+    faces(1).v1 = [0,0,0]'; faces(1).v2 = [w,0,0]'; faces(1).v3 = [0,h,0]';
+    faces(2).v1 = [w,0,0]'; faces(2).v2 = [w,h,0]'; faces(2).v3 = [0,h,0]';
+    
+    faces = update_normals(faces); % normals
+    plane.faces = faces;
+    
+    
+    plane.bb = make_bounding_box(plane); % bounding box
+    plane.o = [0,0,0]'; % origin
+    
+    % centre origin
+    plane = poly_translate(plane, [-w/2, -h/2, 0]');
+    plane.o = [0,0,0]'; % reset origin
+    plane.c = c; % colour
+    plane.e = e; % emmission
+
+end
+
 function plot_poly(b)
 
     for i = 1:length(b.faces) % for each face
@@ -461,7 +503,6 @@ function plot_world(cam, objects)
             % box = poly_rotate(box, rot_mat);
             plot_poly(objects(b));
             plot_poly_norms(objects(b), 2);
-            objects(b)
             plot_bounding_box(objects(b));
             
             [intersect, isecData]=intersect_ray_poly(c_r, objects(b));
