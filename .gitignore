@@ -5,6 +5,7 @@
 !.gitignore
 !*.m
 !info.txt
+!*.c
 
 # ...even if they are in subdirectories
 #!*/
