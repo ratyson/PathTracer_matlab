@@ -3,13 +3,12 @@ function main
     
     cam = new_camera(100);
     objects = buildObjects();
-    lights =  buildLights();
     
    % plot_world(cam, objects); 
    % testPoltIntersect()
    % return;
     
-    nSamples = 999;
+    nSamples = 600;
     frames = 1;
     
     fH = figure(99);
@@ -28,6 +27,7 @@ function main
            set(imH, 'CData', cam.screen);
            drawnow;
            fprintf('.');
+           if( mod(s,30)==0 ), fprintf('(%d)\n',s); end  
         end
         imwrite(get(imH,'CData'), sprintf('out/frame_%d.png',f), 'png');
     end
@@ -85,24 +85,7 @@ function main
 
         %move ip out a bit to avoid self intersect
         isec.ip = isec.ip + 0.0001*isec.n;
-        
-        % check shadow rays and add radiance
-        for l = 1:length(lights)
-           d = lights(l).p - isec.ip; 
-           dl = l_v(d);
-           ray_shadow = make_ray( isec.ip, d, dl); 
-           
-           for b = 1:length(objects),  
-              intersect=shadow_ray_polyMEX(ray_shadow, objects(b));
-              if(intersect), break; end  
-           end 
-           if(~intersect),
-             % fprintf('no shadow\n');
-             flux = sum(ray_shadow.ud.*isec.n) ; % dot prod
-             r = r + isec.c.*( (lights(l).e/sqrt(dl))*flux);
-           end
-        end
-        
+       
         % reflection ray
         %ref_d = ray.d - 2*(ray.d'*isec.n)*isec.n;
         %rayRef = make_ray(isec.ip, ref_d, 100);
@@ -113,9 +96,7 @@ function main
         rayRef = make_ray(isec.ip, rd, 100);
         
         % send out GI ray
-        %flux = sum(conj(rayRef.ud).*isec.n) ; % dot prod
-        %r = r + isec.c.*(radiance(rayRef, depth)*flux);
-        r = r + isec.c.*radiance(rayRef, depth);
+        r = r + isec.e + isec.c.*radiance(rayRef, depth);
   end
 
     function testPoltIntersect()
@@ -152,20 +133,11 @@ function objects = buildObjects
     rot_mat = build_rot_mat(5,25,5);
     objects(3) = poly_rotate(objects(3), rot_mat);
     
-   % objects(4) = make_plane(25,14, [1,1,1]', [0,0,0]');
-   % objects(4) = poly_translate(objects(4), [15.5,10.5,11.15]');
+    objects(4) = make_plane(4,4, [0,0,0]', [10,10,10]'); % white light
+    objects(4) = poly_translate(objects(4), [8,8,6.5]');
+    rot_mat = build_rot_mat(180,30,-25);
+    objects(4) = poly_rotate(objects(4), rot_mat);
     
- %   objects(3) = make_box(14,14,0.3, [0.25,0.75,0.25]', [0,0,0]');
- %   objects(3) = poly_translate(objects(3), [10.5,10.5,0.15]');
- %   objects(3).faces = flipNormals(objects(3).faces);
-
-    
-    
-end
-
-function lights =  buildLights()
-    lights(1).e = [3,3,3]'; % light emision
-    lights(1).p = [0,5,10]';
 end
 
 function a = clamp(a)
