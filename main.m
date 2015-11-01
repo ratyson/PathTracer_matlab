@@ -1,36 +1,49 @@
 function main
     % polygon path tracer. two sided.
     
-    cam = new_camera(100);
+    cam = new_camera(600);
     objects = buildObjects();
     lights =  buildLights();
+    
+    screen = uint8(zeros( cam.yres, cam.xres, 3));
+    
     
    % plot_world(cam, objects); 
    % testPoltIntersect()
    % return;
     
-    nSamples = 999;
+    nSamples = 15;
     frames = 1;
     
     fH = figure(99);
     clf(fH);
-    imH = image( cam.screen );
+    imH = image( screen );
     axis manual
     axis equal
     drawnow
    
     for f = 1:frames,
         fprintf('\nSampling frame %d\n', f);
-        cam.buffer = zeros( cam.yres, cam.xres, 3);
         moveCam([0,0.4,0]',[0,0,2]');
-        for s = 1:nSamples, 
-           sample(s);
-           set(imH, 'CData', cam.screen);
-           drawnow;
-           fprintf('.');
+        buffer = zeros(cam.yres, cam.xres, 3); % RGB buffer
+        for s = 1:nSamples,
+            parfor row = 1:cam.yres,   
+                buffer(row,:,:) =buffer(row,:,:)+ sample(cam, objects, lights, row);     
+            end
+            
+            screen(:,:,1) = uint8(clamp(buffer(:,:,1)./s).*255);
+            screen(:,:,2) = uint8(clamp(buffer(:,:,2)./s).*255);
+            screen(:,:,3) = uint8(clamp(buffer(:,:,3)./s).*255);
+            
+            set(imH, 'CData', screen);
+            drawnow;
         end
         imwrite(get(imH,'CData'), sprintf('out/frame_%d.png',f), 'png');
     end
+    
+    set(imH, 'CData', screen);
+    drawnow;
+           
     fprintf('\nfinished\n');
     
     function moveCam(p,r)
@@ -39,31 +52,45 @@ function main
         cam.rot_mat = build_rot_mat(cam.rot(1),cam.rot(2),cam.rot(3));
     end
 
-    function sample(n)
-        jitter = cam.pixSize_o2 + (-2*cam.pixSize_o2).*rand(cam.screenSize,2);
 
-        pCount = 1;
-        for Y = 1:cam.yres, 
-            Y_screen = cam.yres - (Y-1);
-            for X = 1:cam.xres,
-                X_screen = cam.xres - (X-1);
-                sx = cam.x_sample(X) + jitter( pCount, 1);
-                sy = cam.y_sample(Y) + jitter( pCount, 2);
-
-                c_r = cam_gen_ray( cam, [sx,sy]);
-                col = radiance(c_r, 0);
-
-                cam.buffer(Y,X,1) = cam.buffer(Y,X,1) + col(1);
-                cam.buffer(Y,X,2) = cam.buffer(Y,X,2) + col(2);
-                cam.buffer(Y,X,3) = cam.buffer(Y,X,3) + col(3);
-                cam.screen(Y_screen,X_screen,:) = uint8(clamp(cam.buffer(Y,X,:)./n)*255); 
-                pCount = pCount+1;
-            end        
-        end
-    
+    function testPoltIntersect()
+        r = cam_gen_ray( cam, [0.2,-0.2]);
+        p = objects(2);
+        %[faceI, t] = faces_intersect(r.o,r.ud,r.l, p.nFaces, p.faceArr); 
+        
+        %[intersect, isectData ] = intersect_ray_face(r,p.faces(10));
+        %isectData.t
+        
+        o=p.bb.bounds;
+        o
+        r.sign
+        
+        intersect = intersect_bb(  r.o, r.sign, r.inv_d, p.bb.bounds );
+        intersect
+        intersect = intersect_ray_align_box(p.bb,r);
+        intersect
     end
 
-    function r = radiance(ray, depth)
+end
+
+function buf  = sample(cam, objects, lights,row)
+    jitter = cam.pixSize_o2 + (-2*cam.pixSize_o2).*rand(cam.xres,2);
+    buf = zeros( 1, cam.xres, 3);
+    pCount = 1;
+    Y = cam.yres - (row-1);
+    for X = 1:cam.xres,
+        X_screen = cam.xres - (X-1);
+        sx = cam.x_sample(X) + jitter( pCount, 1);
+        sy = cam.y_sample(Y) + jitter( pCount, 2);
+
+        c_r = cam_gen_ray( cam, [sx,sy]);
+        buf(1,X_screen,:) = radiance(c_r, 0);
+
+        pCount = pCount+1;
+    end        
+  
+        
+     function r = radiance(ray, depth)
         intersect = 0;
         isec.t = inf;
         depth = depth+1;
@@ -116,28 +143,10 @@ function main
         %flux = sum(conj(rayRef.ud).*isec.n) ; % dot prod
         %r = r + isec.c.*(radiance(rayRef, depth)*flux);
         r = r + isec.c.*radiance(rayRef, depth);
-  end
-
-    function testPoltIntersect()
-        r = cam_gen_ray( cam, [0.2,-0.2]);
-        p = objects(2);
-        %[faceI, t] = faces_intersect(r.o,r.ud,r.l, p.nFaces, p.faceArr); 
-        
-        %[intersect, isectData ] = intersect_ray_face(r,p.faces(10));
-        %isectData.t
-        
-        o=p.bb.bounds;
-        o
-        r.sign
-        
-        intersect = intersect_bb(  r.o, r.sign, r.inv_d, p.bb.bounds );
-        intersect
-        intersect = intersect_ray_align_box(p.bb,r);
-        intersect
-    end
+     end
 
 end
-
+    
 function objects = buildObjects
     objects(1) = make_plane(25,14, [1,1,1]', [0,0,0]');
     objects(1) = poly_translate(objects(1), [15.5,10.5,0.15]');
@@ -186,8 +195,6 @@ function camera = new_camera(res)
     
     camera.xres = floor( camera.yres * camera.aspect );
     camera.screenSize = camera.yres * camera.xres;
-    camera.screen = uint8(zeros( camera.yres, camera.xres, 3));
-    camera.buffer = zeros( camera.yres, camera.xres, 3);
     camera.yon = 1; % distance to image plane
     
     camera.rot_mat = build_rot_mat(rot(1),rot(2),rot(3));
